@@ -1,0 +1,479 @@
+from flask import Flask, request, jsonify, render_template
+import pandas as pd
+import numpy as np
+import joblib
+import os
+
+app = Flask(__name__)
+
+# Load the trained model and scaler
+model = joblib.load('bankruptcy_model.pkl')
+scaler = joblib.load('scaler.pkl')
+
+# We need to get all feature names from the original dataset
+# Let's load it directly from your file path
+try:
+    df = pd.read_csv("/Users/deekshapatnam/Desktop/CleaningML/company-bankruptcy-prediction/data.csv")
+    all_feature_names = df.drop('Bankrupt?', axis=1).columns.tolist()
+    print(f"Loaded {len(all_feature_names)} features from dataset")
+except Exception as e:
+    print(f"Could not load original dataset: {e}")
+    # Fallback - use the 5 key features and hope for the best
+    all_feature_names = [
+        ' ROA(C) before interest and depreciation before interest',
+        ' ROA(A) before interest and % after tax',
+        ' Net worth/Assets',
+        ' Debt ratio %',
+        ' Net Income to Total Assets'
+    ]
+
+@app.route('/')
+def home():
+    # Only display the 5 most important features in the form
+    important_features = [
+        ' ROA(C) before interest and depreciation before interest',
+        ' ROA(A) before interest and % after tax',
+        ' Net worth/Assets',
+        ' Debt ratio %',
+        ' Net Income to Total Assets'
+    ]
+    
+    return render_template('index.html', features=important_features)
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    try:
+        # Get data from the form
+        data = request.form.to_dict()
+        
+        # Create a dataframe with all required features (from training)
+        input_df = pd.DataFrame(0, index=[0], columns=all_feature_names)
+        
+        # Update only the features we collect from the form
+        for key, value in data.items():
+            # Try to find an exact match first
+            if key in all_feature_names:
+                input_df[key] = float(value)
+            # Then try with space prefix
+            elif f" {key}" in all_feature_names:
+                input_df[f" {key}"] = float(value)
+            else:
+                print(f"Warning: Form field {key} does not match any model feature")
+        
+        # Scale the features
+        input_scaled = scaler.transform(input_df)
+        
+        # Make prediction
+        prediction = model.predict(input_scaled)
+        probability = model.predict_proba(input_scaled)[0][1]
+        
+        result = {
+            'prediction': int(prediction[0]),
+            'probability': float(probability),
+            'status': 'Bankruptcy Risk' if prediction[0] == 1 else 'No Bankruptcy Risk'
+        }
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        import traceback
+        print("Error in prediction:", str(e))
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)})
+
+if __name__ == '__main__':
+    # Create templates directory if it doesn't exist
+    os.makedirs('templates', exist_ok=True)
+    
+    # Create HTML form
+    with open('templates/index.html', 'w') as f:
+        f.write('''
+       <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial Risk Assessment</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #8EE4AF;
+            --secondary-color: #5CDB95;
+            --dark-bg: #121212;
+            --card-bg: #1E1E1E;
+            --text-color: #FFFFFF;
+            --muted-text: #AAAAAA;
+            --border-radius: 12px;
+            --card-padding: 24px;
+            --transition: all 0.3s ease;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--dark-bg);
+            color: var(--text-color);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+        
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+        }
+        
+        .logo-icon {
+            background-color: var(--text-color);
+            color: var(--dark-bg);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 12px;
+            font-weight: bold;
+        }
+        
+        .btn {
+            background-color: var(--primary-color);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: var(--border-radius);
+            font-weight: bold;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(142, 228, 175, 0.3);
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        
+        .card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: var(--card-padding);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: var(--transition);
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .card-header {
+            margin-bottom: 20px;
+            font-size: 18px;
+            color: var(--muted-text);
+        }
+        
+        .card-title {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--muted-text);
+        }
+        
+        .input-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: var(--border-radius);
+            border: 1px solid #333;
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-color);
+            font-size: 16px;
+            transition: var(--transition);
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(142, 228, 175, 0.3);
+        }
+        
+        .prediction-result {
+            display: none;
+            padding-top: 20px;
+        }
+        
+        .result-card {
+            background-color: var(--card-bg);
+            border-radius: var(--border-radius);
+            padding: var(--card-padding);
+            margin-top: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .result-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 8px;
+            background-color: var(--primary-color);
+        }
+        
+        .result-indicator.risk {
+            background-color: #FF5252;
+        }
+        
+        .result-title {
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        
+        .result-value {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .result-status {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        
+        .donut-chart {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .donut-chart svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .donut-chart .center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .donut-chart .percentage {
+            font-size: 36px;
+            font-weight: bold;
+            display: block;
+        }
+        
+        .donut-chart .label {
+            font-size: 14px;
+            color: var(--muted-text);
+        }
+        
+        .chart-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .chart-label {
+            margin-top: 15px;
+            font-size: 14px;
+            color: var(--muted-text);
+        }
+        
+        .disclaimer {
+            font-size: 12px;
+            color: var(--muted-text);
+            margin-top: 40px;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">FR</div>
+                Financial Risk Assessment
+            </div>
+            <button class="btn">Get in touch</button>
+        </div>
+        
+        <div class="dashboard">
+            <div class="card">
+                <div class="card-header">Bankruptcy Prediction Model</div>
+                <div class="card-title">Company Financial Analysis</div>
+                
+                <form id="prediction-form">
+                    <div class="input-group">
+                        <label>ROA(C) before interest and depreciation</label>
+                        <input type="number" step="0.01" name="ROA(C) before interest and depreciation before interest" value="0.08" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>ROA(A) before interest and % after tax</label>
+                        <input type="number" step="0.01" name="ROA(A) before interest and % after tax" value="0.05" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Net worth/Assets</label>
+                        <input type="number" step="0.01" name="Net worth/Assets" value="0.45" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Debt ratio %</label>
+                        <input type="number" step="0.01" name="Debt ratio %" value="0.55" required>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label>Net Income to Total Assets</label>
+                        <input type="number" step="0.01" name="Net Income to Total Assets" value="0.04" required>
+                    </div>
+                    
+                    <button type="submit" class="btn">Analyze Risk</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <div id="initial-chart-container" class="chart-container">
+                    <div class="donut-chart">
+                        <svg viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="transparent" stroke="#333" stroke-width="10" />
+                            <circle cx="50" cy="50" r="45" fill="transparent" stroke="var(--primary-color)" stroke-width="10" stroke-dasharray="0 283" stroke-dashoffset="0" transform="rotate(-90 50 50)" />
+                        </svg>
+                        <div class="center">
+                            <span class="percentage">--</span>
+                            <span class="label">Risk Score</span>
+                        </div>
+                    </div>
+                    <div class="chart-label">Submit financial data for analysis</div>
+                </div>
+                
+                <div id="result-chart-container" class="chart-container prediction-result">
+                    <div class="donut-chart">
+                        <svg viewBox="0 0 100 100">
+                            <circle cx="50" cy="50" r="45" fill="transparent" stroke="#333" stroke-width="10" />
+                            <circle id="risk-indicator" cx="50" cy="50" r="45" fill="transparent" stroke="var(--primary-color)" stroke-width="10" stroke-dasharray="0 283" stroke-dashoffset="0" transform="rotate(-90 50 50)" />
+                        </svg>
+                        <div class="center">
+                            <span class="percentage" id="risk-percentage">--</span>
+                            <span class="label">Risk Score</span>
+                        </div>
+                    </div>
+                    
+                    <div class="result-card">
+                        <div id="result-indicator" class="result-indicator"></div>
+                        <div class="result-title">Bankruptcy Prediction</div>
+                        <div class="result-status" id="status">Awaiting Analysis</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="disclaimer">
+            This model is based on machine learning analysis of historical financial data. Results should be considered as one of many factors in financial decision-making.
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const predictionForm = document.getElementById('prediction-form');
+            const initialChartContainer = document.getElementById('initial-chart-container');
+            const resultChartContainer = document.getElementById('result-chart-container');
+            const riskIndicator = document.getElementById('risk-indicator');
+            const resultIndicator = document.getElementById('result-indicator');
+            const riskPercentage = document.getElementById('risk-percentage');
+            const statusElement = document.getElementById('status');
+            
+            predictionForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Show loading state
+                initialChartContainer.style.display = 'none';
+                resultChartContainer.style.display = 'flex';
+                riskPercentage.textContent = 'Loading...';
+                statusElement.textContent = 'Analyzing data...';
+                
+                const formData = new FormData(predictionForm);
+                
+                fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Update UI with prediction result
+                    const probabilityPercent = (data.probability * 100).toFixed(0);
+                    riskPercentage.textContent = probabilityPercent + '%';
+                    statusElement.textContent = data.status;
+                    
+                    // Set the stroke dasharray for the donut chart
+                    const circumference = 2 * Math.PI * 45;
+                    const dashArray = (circumference * data.probability) + ' ' + circumference;
+                    riskIndicator.setAttribute('stroke-dasharray', dashArray);
+                    
+                    // Set colors based on risk level
+                    if (data.prediction === 1) {
+                        riskIndicator.setAttribute('stroke', '#FF5252');
+                        resultIndicator.classList.add('risk');
+                    } else {
+                        riskIndicator.setAttribute('stroke', 'var(--primary-color)');
+                        resultIndicator.classList.remove('risk');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    riskPercentage.textContent = 'Error';
+                    statusElement.textContent = 'An error occurred during analysis.';
+                });
+            });
+        });
+    </script>
+</body>
+</html>
+        ''')
+    
+    app.run(debug=True)
